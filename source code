@@ -1,0 +1,131 @@
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.*;
+import java.sql.*;
+
+public class AutoMPGApp {
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/Auto";
+    private static final String DB_USER = "root"; // replace with your DB username
+    private static final String DB_PASSWORD = "password"; // replace with your DB password
+
+    public static void main(String[] args) {
+        // Step 1: Insert Data from TSV
+        insertDataFromTSV("AutoMPG.tsv");
+
+        // Step 2: Create GUI
+        SwingUtilities.invokeLater(AutoMPGApp::createAndShowGUI);
+    }
+
+    public static void insertDataFromTSV(String filePath) {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+
+            String line;
+            String insertSQL = "INSERT INTO Auto (mpg, cylinders, displacement, horsepower, weight, acceleration, model_year, origin, car_name) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            PreparedStatement ps = conn.prepareStatement(insertSQL);
+
+            while ((line = br.readLine()) != null) {
+                String[] data = line.split("\t");
+                if (data.length != 9) continue;
+                ps.setFloat(1, Float.parseFloat(data[0]));
+                ps.setInt(2, Integer.parseInt(data[1]));
+                ps.setFloat(3, Float.parseFloat(data[2]));
+                ps.setFloat(4, data[3].equals("?") ? 0 : Float.parseFloat(data[3]));
+                ps.setFloat(5, Float.parseFloat(data[4]));
+                ps.setFloat(6, Float.parseFloat(data[5]));
+                ps.setInt(7, Integer.parseInt(data[6]));
+                ps.setInt(8, Integer.parseInt(data[7]));
+                ps.setString(9, data[8]);
+                ps.executeUpdate();
+            }
+            System.out.println("Data insertion complete.");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void createAndShowGUI() {
+        JFrame frame = new JFrame("Auto MPG Viewer");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(800, 600);
+
+        JTextField queryField = new JTextField("ALL");
+        JButton searchButton = new JButton("Search");
+        JTable resultTable = new JTable(new DefaultTableModel());
+        JScrollPane scrollPane = new JScrollPane(resultTable);
+
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.add(queryField, BorderLayout.CENTER);
+        topPanel.add(searchButton, BorderLayout.EAST);
+
+        JSlider mpgSlider = new JSlider(0, 60, 10);
+        mpgSlider.setMajorTickSpacing(10);
+        mpgSlider.setPaintTicks(true);
+        mpgSlider.setPaintLabels(true);
+
+        JSlider hpSlider = new JSlider(0, 250, 50);
+        hpSlider.setMajorTickSpacing(50);
+        hpSlider.setPaintTicks(true);
+        hpSlider.setPaintLabels(true);
+
+        JPanel sliderPanel = new JPanel(new GridLayout(2, 1));
+        sliderPanel.add(new JLabel("MPG"));
+        sliderPanel.add(mpgSlider);
+        sliderPanel.add(new JLabel("Horsepower"));
+        sliderPanel.add(hpSlider);
+
+        frame.add(topPanel, BorderLayout.NORTH);
+        frame.add(scrollPane, BorderLayout.CENTER);
+        frame.add(sliderPanel, BorderLayout.SOUTH);
+
+        searchButton.addActionListener(e -> {
+            String userInput = queryField.getText();
+            String sql = userInput.equalsIgnoreCase("ALL") ? "SELECT * FROM Auto" : userInput;
+            loadData(sql, resultTable);
+        });
+
+        ChangeListener sliderListener = e -> {
+            int mpg = mpgSlider.getValue();
+            int hp = hpSlider.getValue();
+            String sql = "SELECT * FROM Auto WHERE mpg >= " + mpg + " AND horsepower >= " + hp;
+            loadData(sql, resultTable);
+        };
+
+        mpgSlider.addChangeListener(sliderListener);
+        hpSlider.addChangeListener(sliderListener);
+
+        frame.setVisible(true);
+    }
+
+    public static void loadData(String query, JTable table) {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+
+            ResultSetMetaData metaData = rs.getMetaData();
+            DefaultTableModel model = new DefaultTableModel();
+            int columnCount = metaData.getColumnCount();
+
+            // Add column names
+            for (int i = 1; i <= columnCount; i++) {
+                model.addColumn(metaData.getColumnName(i));
+            }
+
+            // Add rows
+            while (rs.next()) {
+                Object[] row = new Object[columnCount];
+                for (int i = 0; i < columnCount; i++) {
+                    row[i] = rs.getObject(i + 1);
+                }
+                model.addRow(row);
+            }
+
+            table.setModel(model);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
